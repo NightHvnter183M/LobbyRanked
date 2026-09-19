@@ -7,11 +7,13 @@ import mindustry.mod.Plugin;
 public class Main extends Plugin {
 
     ServerManager serverManager;
+    MenuManager menuManager;
 
     @Override
     public void init(){
         ///Here will be admin settings of the lobby
     serverManager = new ServerManager();
+    menuManager = new MenuManager();
     Resources.currentDuels.clear();
     Resources.duelRequests.clear();
 
