@@ -15,13 +15,11 @@ public class Main extends Plugin {
     public Seq<Duel> Ips = new Seq<>();
     Fi file;
 
-    ServerManager serverManager;
     CommandManager commandManager;
 
     @Override
     public void init(){
         ///Here will be admin settings of the lobby
-    serverManager = new ServerManager();
     commandManager = new CommandManager();
     commandManager.init();
     Resources.currentDuels.clear();
@@ -37,7 +35,7 @@ public class Main extends Plugin {
             commandManager.callDuelMenu(player);
         });
         handler.<Player>register("accept", "accept a duel", (args, player) -> {
-            commandManager.duelAccept(player);
+            commandManager.duelAccept(player, this);
         });
         handler.<Player>register("deny", "deny a duel", (args, player) ->{
             commandManager.duelDeny(player);
@@ -56,7 +54,8 @@ public class Main extends Plugin {
             int i = 0;
             for (Jval element : targets.asArray()) {
                 String ip = element.getString("ip", "127.0.0.1");
-                int port = element.getInt("port", 6567); // Default port
+                int port = element.getInt("port", 6567);
+                if (ip.isEmpty() || port == 0) continue; // Default port
                 Ips.add(new Duel(i, ip, port));
                 i++;
             }
@@ -97,8 +96,8 @@ public class Main extends Plugin {
         public int number;
         public int port;
         public String ip;
-        public String firstPlayer;
-        public String secondPlayer;
+        public Player firstPlayer;
+        public Player secondPlayer;
         public Boolean isBusy = false;
 
         public Duel(int number, String ip, int port){

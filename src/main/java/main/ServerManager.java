@@ -17,12 +17,12 @@ public class ServerManager {
             v.sendMessage("No free servers, please wait");
             return;
         }
+        p.sendMessage("`Server is fount, reconnecting to the server`");
+        v.sendMessage("`Server is fount, reconnecting to the server`");
         freeServer.isBusy = true;
-        freeServer.firstPlayer = p.name;
-        freeServer.secondPlayer = v.name;
+        freeServer.firstPlayer = p;
+        freeServer.secondPlayer = v;
         Call.connect(p.con, freeServer.ip, freeServer.port);
         Call.connect(v.con, freeServer.ip, freeServer.port);
     }
-
-
 }
