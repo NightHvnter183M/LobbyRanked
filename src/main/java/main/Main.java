@@ -1,33 +1,46 @@
 package main;
 
 import arc.Core;
+import arc.Events;
 import arc.files.Fi;
 import arc.struct.Seq;
 import arc.util.CommandHandler;
 import arc.util.Log;
 import arc.util.serialization.Jval;
+import com.sun.net.httpserver.HttpServer;
+import mindustry.game.EventType;
 import mindustry.gen.Player;
 import mindustry.mod.Plugin;
 
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+
 public class Main extends Plugin {
-    ///Fields for serverManager
+
+    private HttpServer httpServer;
     public static String[] duelIps = new String[4];
     public Seq<Duel> Ips = new Seq<>();
     Fi file;
-
     CommandManager commandManager;
 
     @Override
     public void init(){
         ///Here will be admin settings of the lobby
     commandManager = new CommandManager();
-    commandManager.init();
+    commandManager.init(this);
+    startLobbyReceiver();
     Resources.currentDuels.clear();
     Resources.duelRequests.clear();
+    ServerSetup serverSetup = new ServerSetup();
     file = Core.settings.getDataDirectory().child("mods/FoundaionRanked-config.json");
-    if (file.exists()) loadConfig();
-    else createDefaultConfig();
+    if (!file.exists()) createDefaultConfig();
     loadConfig();
+    Events.on(EventType.DisposeEvent.class, event -> {
+        if (httpServer != null) httpServer.stop(0);
+    });
+    Events.on(EventType.PlayEvent.class, event -> {
+        serverSetup.setup();
+    });
     }
     ///And here are commands
     public void registerClientCommands(CommandHandler handler){
@@ -35,14 +48,28 @@ public class Main extends Plugin {
             commandManager.callDuelMenu(player);
         });
         handler.<Player>register("accept", "accept a duel", (args, player) -> {
-            commandManager.duelAccept(player, this);
+            commandManager.duelAccept(player);
         });
         handler.<Player>register("deny", "deny a duel", (args, player) ->{
             commandManager.duelDeny(player);
         });
 
-        handler.<Player>register("spectate", "watch other people plaing duels", (args, player) -> {
+        handler.<Player>register("spectate", "watch other people playing duels", (args, player) -> {
+            commandManager.spectateCommand(player);
+        });
 
+        handler.<Player>register("reconnect", "Reconnect to a session", (args, player) -> {
+            commandManager.duelReconnect(player);
+        });
+    }
+
+    public void registerServerCommands(CommandHandler handler){
+        handler.register("servers", "Show available servers", (args) -> {
+            Log.info("[FoundationRanked] all servers:");
+            for (Main.Duel server: Ips){
+                if (server.isBusy) Log.info("Server " + server.number + " IP: " + server.ip + ":" + server.port + " " + server.firstPlayer.name() + " VS " + server.secondPlayer.name);
+                else Log.info("Server " + server.number + " IP: " + server.ip + ":" + server.port + " NOW IS FREE");
+            }
         });
     }
 
@@ -92,20 +119,70 @@ public class Main extends Plugin {
         return obj;
     }
 
-    public class Duel{
+    private void startLobbyReceiver() {
+        int webPort = 25000;
+        try {
+            httpServer = HttpServer.create(new InetSocketAddress(webPort), 0);
+            httpServer.createContext("/arenaFree", exchange -> {
+                String query = exchange.getRequestURI().getQuery();
+                if (query != null && query.startsWith("port=")) {
+                    try {
+                        int port = Integer.parseInt(query.split("=")[1]);
+                        for (Duel duel : Ips) {
+                            if (duel.port == port) {
+                                duel.reset();
+                                Log.info("[FoundationRanked] Server by port:  " + port + " is free");
+                                break;
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+                String response = "OK";
+                exchange.sendResponseHeaders(200, response.length());
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(response.getBytes());
+                }
+            });
+            httpServer.setExecutor(null);
+            httpServer.start();
+            Log.info("[FoundationRanked] WebReceiver successfully loaded on port:  " + webPort);
+
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                if (httpServer != null) {
+                    httpServer.stop(0);
+                    Log.info("[FoundationRanked] WebReceiver successfully stopped.");
+                }
+            }));
+
+        } catch (Exception e) {
+            Log.err("[FoundationRanked] Error starting lobby receiver: ", e);
+        }
+    }
+
+    public static class Duel{
         public int number;
         public int port;
         public String ip;
         public Player firstPlayer;
         public Player secondPlayer;
+        public String firstUuid = "";
+        public String secondUuid = "";
         public Boolean isBusy = false;
 
         public Duel(int number, String ip, int port){
             this.number = number;
             this.ip = ip;
             this.port = port;
-
         }
 
+        public void reset(){
+            this.firstPlayer = null;
+            this.secondPlayer = null;
+            this.firstUuid = "";
+            this.secondUuid = "";
+            this.isBusy = false;
+        }
     }
+
+
 }

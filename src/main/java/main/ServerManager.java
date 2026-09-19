@@ -22,6 +22,8 @@ public class ServerManager {
         freeServer.isBusy = true;
         freeServer.firstPlayer = p;
         freeServer.secondPlayer = v;
+        freeServer.firstUuid = p.uuid();
+        freeServer.secondUuid = v.uuid();
         Call.connect(p.con, freeServer.ip, freeServer.port);
         Call.connect(v.con, freeServer.ip, freeServer.port);
     }
