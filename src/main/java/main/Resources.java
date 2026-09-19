@@ -7,9 +7,9 @@ import mindustry.gen.Player;
 
 public class Resources {
     ///First uuid of target, second of the sender duel
-    public static ObjectMap<String, String> duelRequests = new ObjectMap<>();
+    public static ObjectMap<Player, Player> duelRequests = new ObjectMap<>();
     public static ObjectMap<Integer, String> currentDuels = new ObjectMap<>();
-    public static int duelMenuId, acceptMenuId;
+    public static int duelMenuId;
 
     static Seq<Player> getOthers(Player p){
         Seq<Player> others = new Seq<>();
