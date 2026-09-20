@@ -8,8 +8,20 @@ import mindustry.gen.Player;
 public class Resources {
     ///First uuid of target, second of the sender duel
     public static ObjectMap<Player, Player> duelRequests = new ObjectMap<>();
+    ///Map chosen for the request, the key is the same as in duelRequests (the target)
+    public static ObjectMap<Player, LobbyLink.MapEntry> duelMaps = new ObjectMap<>();
     public static ObjectMap<Integer, String> currentDuels = new ObjectMap<>();
-    public static int duelMenuId, spectateMenuId;
+    public static int duelMenuId, spectateMenuId, mapsListMenuId, duelMapMenuId;
+
+    ///A challenge that is being set up: what the challenger saw in the menus.
+    ///We keep it, so the button indexes can't drift if players or maps change while the menu is open
+    public static class DuelDraft {
+        public Seq<Player> targets;           // players shown in the first menu
+        public Player target;                 // the chosen opponent
+        public Seq<LobbyLink.MapEntry> maps;  // maps shown in the second menu
+    }
+    ///Key - the challenger
+    public static ObjectMap<Player, DuelDraft> drafts = new ObjectMap<>();
 
     static Seq<Player> getOthers(Player p){
         Seq<Player> others = new Seq<>();
