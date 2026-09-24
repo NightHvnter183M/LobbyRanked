@@ -14,9 +14,14 @@ public class ServerSetup {
         Vars.state.rules.planet = Planets.sun;
         Vars.maps.setNextMapOverride(Vars.maps.customMaps().random());
         String motd = """
-                [#008B8B]Foundation Ranked - [white]a new ranked PvP server
+                [#008B8B]Foundation Lobby - [white]lobby for all servers!
                 """;
         Administration.Config.desc.set(motd);
+        Administration.Config.serverName.set("[#5F9EA0]Foundation - Lobby");
+        Administration.Config.motd.set("""
+                [white]Welcome to the [#008B8B]Foundation PvP!
+            [white]If you want to go to the OPvP - use /opvp
+            [white] Если вы хотите перейти на сервер OPvP - используйте /opvp""");
         Call.setRules(Vars.state.rules);
     }
 }

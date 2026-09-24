@@ -11,9 +11,9 @@ import arc.util.Strings;
 import arc.util.serialization.Jval;
 import com.sun.net.httpserver.HttpServer;
 import mindustry.game.EventType;
+import mindustry.gen.Call;
 import mindustry.gen.Player;
 import mindustry.mod.Plugin;
-
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 
@@ -26,7 +26,7 @@ public class Main extends Plugin {
 
     /// Shared secret for the lobby <-> arena API (config.json "token", env FR_TOKEN has priority)
     public String token = "";
-    /// Default rules of a match (config.json "rules"). The lobby sends them to the arena, see ArenaLink.apply
+    /// Default rules of a match (config.json "rules"). The lobby sends them to the arena, see ArenaLink.Apply
     public Jval rules = Jval.newObject();
     /// Client for the arenas: creates matches, collects the map list
     public LobbyLink link;
@@ -43,8 +43,8 @@ public class Main extends Plugin {
         startLobbyReceiver();
         Resources.currentDuels.clear();
         Resources.duelRequests.clear();
-        Resources.duelMaps.clear();
         Resources.drafts.clear();
+        Resources.outgoing.clear();
         ServerSetup serverSetup = new ServerSetup();
         file = Core.settings.getDataDirectory().child("mods/FoundaionRanked-config.json");
         if (!file.exists()) createDefaultConfig();
@@ -78,13 +78,14 @@ public class Main extends Plugin {
         CommandHandler.CommandRunner<Player> discordLogic = (args, player) -> commandManager.discordList(player);
 
         CommandHandler.CommandRunner<Player> leaderboardLogic = (args, player) -> {
-
         };
 
         CommandHandler.CommandRunner<Player> reconnectLogic = (args, player) -> commandManager.duelReconnect(player);
+        CommandHandler.CommandRunner<Player> opvpLogic = (args, player) -> Call.connect(player.con, "188.126.61.232", 6568);
 
         ///And commands by themselves
         helpEntries.clear();
+        addCommand(handler, "Go to the OPvP", opvpLogic, "go", "opvp");
         addCommand(handler, "Reconnect to the session", reconnectLogic, "reconnect", "rc");
         addCommand(handler, "Suggest playing a game", playLogic, "play", "p");
         addCommand(handler, "Play ranked", ratingLogic, "rating", "r");
@@ -151,7 +152,7 @@ public class Main extends Plugin {
         handler.register("servers", "Show available servers", (args) -> {
             Log.info("[FoundationRanked] all servers:");
             for (Main.Duel server: Ips){
-                if (server.isBusy) Log.info("Server " + server.number + " IP: " + server.ip + ":" + server.port + " " + server.firstPlayer.name() + " VS " + server.secondPlayer.name);
+                if (server.isBusy) Log.info("Server " + server.number + " IP: " + server.ip + ":" + server.port + " " + Resources.teamNames(server.teams));
                 else Log.info("Server " + server.number + " IP: " + server.ip + ":" + server.port + " NOW IS FREE");
             }
         });
@@ -180,7 +181,11 @@ public class Main extends Plugin {
                 if (ip.isEmpty() || port == 0) continue; // Default port
                 Duel duel = new Duel(i, ip, port);
                 duel.host = element.getString("host", "");
-                duel.apiPort = element.getInt("apiPort", Session.defaultApoPort);
+                duel.apiPort = element.getInt("apiPort", Session.DEFAULT_API_PORT);
+                ///"modes": ["1v1","2v2","4v4"] or ["ffa4"] etc. Absent/empty = every mode except ffa4 (see Duel.supports)
+                if (element.has("modes")) {
+                    for (Jval m : element.get("modes").asArray()) duel.modes.add(m.asString());
+                }
                 Ips.add(duel);
                 i++;
             }
@@ -202,6 +207,13 @@ public class Main extends Plugin {
             defaultIps.asArray().add(createAddressObject("0.0.0.0", 25565));
             defaultIps.asArray().add(createAddressObject("192.168.1.1", 8080));
             defaultIps.asArray().add(createAddressObject("", 0));
+            ///Example of a dedicated ffa4 arena: needs "modes" set explicitly, and its config/maps folder
+            ///needs maps with 4 spawn points - ordinary 1v1/2v2/4v4 maps won't work here
+            Jval ffaExample = createAddressObject("", 0);
+            Jval ffaModes = Jval.newArray();
+            ffaModes.asArray().add(Jval.valueOf("ffa4"));
+            ffaExample.add("modes", ffaModes);
+            defaultIps.asArray().add(ffaExample);
             defaultJson.add("token", Jval.valueOf(""));
             defaultJson.add("rules", Jval.newObject());
             defaultJson.add("duels", defaultIps);
@@ -217,7 +229,9 @@ public class Main extends Plugin {
         obj.add("ip", Jval.valueOf(ip));
         obj.add("port", Jval.valueOf(port));
         obj.add("host", Jval.valueOf(""));  // Pterodactyl server UUID of the arena (container name), e.g. "06b55ab3-..."
-        obj.add("apiPort", Jval.valueOf(Session.defaultApoPort));
+        obj.add("apiPort", Jval.valueOf(Session.DEFAULT_API_PORT));
+        // "modes": ["1v1","2v2","4v4"] (optional) - which DuelMode ids this arena hosts.
+        // Omitted = every mode except ffa4, so existing arenas don't need editing to keep working
         return obj;
     }
 
@@ -280,11 +294,16 @@ public class Main extends Plugin {
         ///INTERNAL address for the API: name of the arena's container in Pterodactyl (the server UUID, docker DNS)
         ///+ port inside the docker network. Empty host - fall back to ip
         public String host = "";
-        public int apiPort = Session.defaultApoPort;
-        public Player firstPlayer;
-        public Player secondPlayer;
-        public String firstUuid = "";
-        public String secondUuid = "";
+        public int apiPort = Session.DEFAULT_API_PORT;
+        ///Which modes this arena's maps support (DuelMode.id, e.g. "ffa4"). Empty ("modes" absent from
+        ///config.json) means "every mode except ffa4" - a plain 1v1 map doesn't have 4 spawn points, so
+        ///ffa4 only runs on arenas that explicitly opt in
+        public Seq<String> modes = new Seq<>();
+        ///Every team in the current match, each a list of players (2 teams for 1v1/2v2/4v4, 4 for ffa4)
+        public Seq<Seq<Player>> teams = new Seq<>();
+        ///Uuids of every participant, captured once when the match starts. Unlike the Player refs above,
+        ///a uuid stays valid across a disconnect, so this is what reconnect checks (see hasUuid)
+        public Seq<String> uuids = new Seq<>();
         public Boolean isBusy = false;
 
         public Duel(int number, String ip, int port){
@@ -298,11 +317,31 @@ public class Main extends Plugin {
             return "http://" + (host.isEmpty() ? ip : host) + ":" + apiPort + path;
         }
 
+        public boolean supports(DuelMode mode){
+            return modes.isEmpty() ? mode != DuelMode.modeFFA : modes.contains(mode.id);
+        }
+
+        public boolean hasUuid(String uuid){
+            return uuids.contains(uuid);
+        }
+
+        ///Call when a participant (re)joins: swaps in the fresh Player ref for messaging / session-building
+        public void refresh(Player player){
+            for (Seq<Player> team : teams) replace(team, player);
+        }
+
+        private static void replace(Seq<Player> team, Player fresh){
+            for (int i = 0; i < team.size; i++) {
+                if (team.get(i).uuid().equals(fresh.uuid())) {
+                    team.set(i, fresh);
+                    return;
+                }
+            }
+        }
+
         public void reset(){
-            this.firstPlayer = null;
-            this.secondPlayer = null;
-            this.firstUuid = "";
-            this.secondUuid = "";
+            this.teams.clear();
+            this.uuids.clear();
             this.isBusy = false;
         }
     }

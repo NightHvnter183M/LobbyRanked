@@ -5,7 +5,7 @@ import arc.util.serialization.Jval;
 
 public class Session {
 
-    public static final int defaultApoPort = 7567;
+    public static final int DEFAULT_API_PORT = 7567;
 
     public static class Slot {
         public String uuid = "";
